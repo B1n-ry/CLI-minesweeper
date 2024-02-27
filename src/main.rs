@@ -1,8 +1,8 @@
-use crossterm::event::{read, Event, KeyCode};
+use crossterm::{event::{read, Event, KeyCode}, style::{Colorize, StyledContent}};
 use std::collections::VecDeque;
 
 
-static UNOPENED: char = '0';
+static UNOPENED: char = '?';
 static MINE: char = 'X';
 static EMPTY: char = ' ';
 static FLAG: char = 'P';
@@ -79,15 +79,35 @@ fn update_board(board: &mut Vec<Vec<char>>, cursor: &mut [usize; 2]) {
     for i in 0..board.len() {
         for j in 0..board[i].len() {
             if i == cursor[0] && j == cursor[1] {
-                output.push_str(&format!("[{}]", board[i][j]));
+                output.push_str(&format!("[{}]", styled(board[i][j])));
             } else {
-                output.push_str(&format!(" {} ", board[i][j]));
+                output.push_str(&format!(" {} ", styled(board[i][j])));
             }
         }
         output.push('\n');
     }
 
     print!("{}", output);
+}
+
+/// Returns a styled character based on the input character
+/// Completely unnecessary for the basic game, but fun to have
+fn styled(c: char) -> StyledContent<char> {
+    return match c {
+        x if x == UNOPENED => UNOPENED.white(),
+        x if x == MINE => MINE.dark_red(),
+        x if x == EMPTY => EMPTY.white(),
+        x if x == FLAG => FLAG.dark_yellow(),
+        x if x == NUMS[0] => NUMS[0].blue(),
+        x if x == NUMS[1] => NUMS[1].green(),
+        x if x == NUMS[2] => NUMS[2].red(),
+        x if x == NUMS[3] => NUMS[3].dark_blue(),
+        x if x == NUMS[4] => NUMS[4].magenta(),
+        x if x == NUMS[5] => NUMS[5].yellow(),
+        x if x == NUMS[6] => NUMS[6].dark_cyan(),
+        x if x == NUMS[7] => NUMS[7].red(),
+        _ => ' '.white(),
+    }
 }
 
 fn generate_mines(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &[usize; 2], mut semi_rand: u32) {
