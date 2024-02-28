@@ -33,13 +33,13 @@ fn main() -> crossterm::Result<()> {
             }
             match key_event.code {
                 KeyCode::Up => {
-                    cursor[0] = (cursor[0] + 15) % board_height;
+                    cursor[0] = (cursor[0] + board_height - 1) % board_height;
                 },
                 KeyCode::Down => {
                     cursor[0] = (cursor[0] + 1) % board_height;
                 },
                 KeyCode::Left => {
-                    cursor[1] = (cursor[1] + 15) % board_width;
+                    cursor[1] = (cursor[1] + board_width - 1) % board_width;
                 },
                 KeyCode::Right => {
                     cursor[1] = (cursor[1] + 1) % board_width;
@@ -97,7 +97,7 @@ fn styled(c: char) -> StyledContent<char> {
         x if x == UNOPENED => UNOPENED.white(),
         x if x == MINE => MINE.dark_red(),
         x if x == EMPTY => EMPTY.white(),
-        x if x == FLAG => FLAG.dark_yellow(),
+        x if x == FLAG => FLAG.dark_red(),
         x if x == NUMS[0] => NUMS[0].blue(),
         x if x == NUMS[1] => NUMS[1].green(),
         x if x == NUMS[2] => NUMS[2].red(),
@@ -111,7 +111,7 @@ fn styled(c: char) -> StyledContent<char> {
 }
 
 fn generate_mines(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &[usize; 2], mut semi_rand: u32) {
-    let bomb_count: usize = 30;
+    let bomb_count: usize = 50;
 
     while bombs.len() < bomb_count {
         regen_random(&mut semi_rand);
