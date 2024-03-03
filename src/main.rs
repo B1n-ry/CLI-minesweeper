@@ -1,5 +1,7 @@
-use crossterm::{event::{read, Event, KeyCode}, style::{Colorize, StyledContent}};
-use std::collections::VecDeque;
+use crossterm::{execute, cursor, event::{read, Event, KeyCode}, style::{Colorize, StyledContent, Print}};
+use std::{collections::VecDeque, usize};
+use std::io::stdout;
+use std::env::args;
 
 
 static UNOPENED: char = '?';
@@ -9,26 +11,29 @@ static FLAG: char = 'P';
 static NUMS: [char; 8] = ['1', '2', '3', '4', '5', '6', '7', '8'];
 
 fn main() -> crossterm::Result<()> {
-    // TODO: Add command line arguments for custom board size and bomb count
-    let board_height: usize = 16;
-    let board_width: usize = 16;
+    let board_width = args().nth(1).unwrap_or("16".to_string()).parse::<usize>().unwrap();
+    let board_height = args().nth(2).unwrap_or("16".to_string()).parse::<usize>().unwrap();
+    let bomb_count = args().nth(3).unwrap_or("50".to_string()).parse::<usize>().unwrap();
+
+    print!("{}[2J", 27 as char);  // Clear the terminal
 
     let mut board: Vec<Vec<char>> = vec![vec![UNOPENED; board_width]; board_height];
     let mut bombs: Vec<[usize; 2]> = Vec::new();
 
     let mut cursor: [usize; 2] = [0, 0];
-    update_board(&mut board, &mut cursor);
+    update_board(&mut board, &mut cursor)?;
 
     let mut game_started: bool = false;
 
     let mut ticks: u32 = 0x12345678;
+    let mut explored: usize = 0;
     let mut alive: bool = true;
     loop {
-        ticks += 1;
+        (ticks, _) = ticks.overflowing_add(1);
         if let Event::Key(key_event) = read()? {
             if !alive {
                 reset_game(&mut board, &mut bombs, &mut game_started, &mut alive);
-                update_board(&mut board, &mut cursor);
+                update_board(&mut board, &mut cursor)?;
                 continue;
             }
             match key_event.code {
@@ -49,11 +54,14 @@ fn main() -> crossterm::Result<()> {
                         continue;
                     }
                     if !game_started {
-                        generate_mines(&mut board, &mut bombs, &cursor, ticks);
+                        generate_mines(&mut board, &mut bombs, bomb_count, &cursor, ticks);
                         game_started = true;
                     }
 
-                    alive = explore(&mut board, &mut bombs, &mut cursor);
+                    alive = explore(&mut board, &mut bombs, &mut cursor, &mut explored);
+                    if alive && explored == board_height * board_width - bombs.len() {
+                        print!("You win!\n");
+                    }
                 },
                 KeyCode::Char('f') => {
                     if board[cursor[0]][cursor[1]] == UNOPENED {
@@ -67,27 +75,24 @@ fn main() -> crossterm::Result<()> {
                 },
                 _ => {}
             }
-            update_board(&mut board, &mut cursor);
+            update_board(&mut board, &mut cursor)?;
         }
     }
 }
 
-fn update_board(board: &mut Vec<Vec<char>>, cursor: &mut [usize; 2]) {
-    let mut output = String::new();
-    output.push_str(&format!("{}[2J", 27 as char));  // Clear the terminal
+fn update_board(board: &mut Vec<Vec<char>>, cursor: &mut [usize; 2]) -> crossterm::Result<()> {
 
     for i in 0..board.len() {
         for j in 0..board[i].len() {
+            execute!(stdout(), cursor::MoveTo(j as u16 * 3, i as u16))?;
             if i == cursor[0] && j == cursor[1] {
-                output.push_str(&format!("[{}]", styled(board[i][j])));
+                execute!(stdout(), Print(format!("[{}]", styled(board[i][j]))))?;
             } else {
-                output.push_str(&format!(" {} ", styled(board[i][j])));
+                execute!(stdout(), Print(format!(" {} ", styled(board[i][j]))))?;
             }
         }
-        output.push('\n');
     }
-
-    print!("{}", output);
+    Ok(())
 }
 
 /// Returns a styled character based on the input character
@@ -110,18 +115,19 @@ fn styled(c: char) -> StyledContent<char> {
     }
 }
 
-fn generate_mines(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &[usize; 2], mut semi_rand: u32) {
-    let bomb_count: usize = 50;
-
+fn generate_mines(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, bomb_count: usize, cursor: &[usize; 2], mut semi_rand: u32) {
+    let mut failed_attempts: usize = 0;
     while bombs.len() < bomb_count {
         regen_random(&mut semi_rand);
         let x: usize = semi_rand as usize % board[0].len();
         regen_random(&mut semi_rand);
         let y: usize = semi_rand as usize % board.len();
 
-        if (cursor_too_close(cursor, &[y, x])) || bombs.contains(&[y, x]) {
+        if (cursor_too_close(cursor, &[y, x]) || bombs.contains(&[y, x])) && failed_attempts < 300 {
+            failed_attempts += 1;
             continue;
         }
+        failed_attempts = 0;
         bombs.push([y, x]);
     }
 }
@@ -140,7 +146,7 @@ fn regen_random(rand: &mut u32) {
     *rand = product as u32;
 }
 
-fn explore(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &mut [usize; 2]) -> bool {
+fn explore(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &mut [usize; 2], explored: &mut usize) -> bool {
     if bombs.contains(cursor) {
         for bomb in bombs {
             let bomb_x: usize = bomb[1];
@@ -153,7 +159,6 @@ fn explore(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &mut
     let height = board.len();
     let width = board[0].len();
 
-    let mut processed: Vec<[usize; 2]> = Vec::new();
     let mut queue: VecDeque<[usize; 2]> = VecDeque::new();
     queue.push_back(*cursor);
     
@@ -174,9 +179,9 @@ fn explore(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &mut
     }
 
     while !queue.is_empty() {
-        let pos: [usize; 2] = queue.pop_front().expect("Uh oh this is wrong");
+        let pos: [usize; 2] = queue.pop_front().expect("Queue should not be empty");
         
-        if processed.contains(&pos) {
+        if board[pos[0]][pos[1]] != UNOPENED {
             continue;
         }
 
@@ -199,7 +204,7 @@ fn explore(board: &mut Vec<Vec<char>>, bombs: &mut Vec<[usize; 2]>, cursor: &mut
                 }
             }
         }
-        processed.push(pos);
+        *explored += 1;
     }
 
     return true;
